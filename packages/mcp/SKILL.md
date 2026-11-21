@@ -2,13 +2,28 @@
 name: cryptoslip-pocket-slip
 description: Non-custodial Base Mainnet (8453) PocketSlip wallet and settlement MCP skill for AI agents. Provision an agent with a $5 USDC, ETH, cbBTC, or NARA CryptoSLIP URL instead of a master wallet private key; auto-rotates on boot (<1s Keep at 0% fee), enforces an out-of-context BoundedAgentPolicy spend firewall, pays HTTP 402 APIs and merchants, sends 1-tap Telegram/X/SMS human bounties, executes 1-tx Multicall3 batch payouts, verifies cryptographic payment receipts, reclaims unclaimed slips, and collects 0.25% lifetime referral rewards.
 license: MIT
-compatibility: Node.js >= 22. Run via `npx @cryptoslip/mcp` with `CRYPTOSLIP_URL="<YOUR_SLIP_URL>"`.
+compatibility: Node.js >= 22. Run pinned version `npx @cryptoslip/mcp@1.0.2` with `CRYPTOSLIP_URL="<YOUR_SLIP_URL>"`.
 metadata:
   author: nara-protocol
-  version: "1.0.0"
+  version: "1.0.2"
   chain: base-mainnet-8453
-  mcp-package: "@cryptoslip/mcp"
-  sdk-package: "@cryptoslip/sdk"
+  mcp-package: "@cryptoslip/mcp@1.0.2"
+  sdk-package: "@cryptoslip/sdk@1.0.0"
+  openclaw:
+    requires:
+      bins:
+        - node
+        - npx
+      env:
+        - CRYPTOSLIP_URL
+      optionalEnv:
+        - CRYPTOSLIP_MAX_PER_CALL_USD
+        - CRYPTOSLIP_MAX_DAILY_USD
+        - CRYPTOSLIP_MAX_SPENDS_PER_MIN
+        - CRYPTOSLIP_ALLOWED_RECIPIENTS
+        - CRYPTOSLIP_ALLOWED_DOMAINS
+        - CRYPTOSLIP_RPC_URL
+        - CRYPTOSLIP_STATE_PATH
   registry-targets:
     - openclaw-skills
     - clawhub
@@ -52,7 +67,7 @@ Create a `$5.00 USDC` slip at `https://slip.naraprotocol.io` (or `https://crypto
   "mcpServers": {
     "cryptoslip": {
       "command": "npx",
-      "args": ["-y", "@cryptoslip/mcp"],
+      "args": ["@cryptoslip/mcp@1.0.2"],
       "env": {
         "CRYPTOSLIP_URL": "<YOUR_SLIP_URL>",
         "CRYPTOSLIP_MAX_PER_CALL_USD": "0.50",
@@ -64,10 +79,10 @@ Create a `$5.00 USDC` slip at `https://slip.naraprotocol.io` (or `https://crypto
 }
 ```
 
-Or via Claude Code CLI:
+Or via Claude Code CLI (pinned to the Sigstore-verified `1.0.2` release):
 
 ```bash
-claude mcp add cryptoslip -e CRYPTOSLIP_URL="<YOUR_SLIP_URL>" -- npx -y @cryptoslip/mcp
+claude mcp add cryptoslip -e CRYPTOSLIP_URL="<YOUR_SLIP_URL>" -- npx @cryptoslip/mcp@1.0.2
 ```
 
 ---

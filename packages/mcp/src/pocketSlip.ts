@@ -400,16 +400,12 @@ export class PocketSlipVault {
     if (!this.stateFilePath) return;
     const dir = path.dirname(this.stateFilePath);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const tmpPath = `${this.stateFilePath}.${process.pid}.tmp`;
+    const tmpPath = `${this.stateFilePath}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
     fs.writeFileSync(tmpPath, JSON.stringify(state, null, 2), {
       encoding: 'utf8',
       mode: 0o600,
+      flag: 'wx',
     });
-    try {
-      fs.chmodSync(tmpPath, 0o600);
-    } catch {
-      // Windows NTFS ignores POSIX mode bits; chmod succeeds on Linux/macOS
-    }
     fs.renameSync(tmpPath, this.stateFilePath);
   }
 
@@ -714,6 +710,13 @@ export class PocketSlipVault {
     // split the required funding slice from the PocketSlip into operatorAddress first,
     // then mint the recipient's slip via Circle TokenPaymasterV08 / batch executor.
     if (this.activeSlipId && this.activeClaimPrivateKey && !this.walletClient) {
+      // Fail closed on cross-asset payouts so raw units of another token (e.g. cbBTC/ETH)
+      // can never be priced against this.activeAsset (e.g. USDC) and bypass the USD budget.
+      if (asset !== this.activeAsset) {
+        throw new PocketSlipError(
+          `Cross-asset human payout (${asset}) is blocked for a ${this.activeAsset} PocketSlip. Provision a ${asset} PocketSlip or configure an explicit walletClient.`,
+        );
+      }
       let targetNetToOperator = grossMintUnits;
       if (asset === 'USDC' && this.activeAsset === 'USDC') {
         let operatorUsdc: bigint | null = null;
@@ -794,7 +797,7 @@ export class PocketSlipVault {
       this.policy.authorizeAndRecordSpend({
         amount: grossMintUnits,
         asset,
-        dedupKey: `pay_human:${Date.now()}:${grossMintUnits.toString()}`,
+        dedupKey: `pay_human:${randomBytes(8).toString('hex')}:${grossMintUnits.toString()}`,
       });
     }
 
@@ -900,7 +903,7 @@ export class PocketSlipVault {
     this.policy.authorizeAndRecordSpend({
       amount: totalUsdMicro,
       asset: 'USDC',
-      dedupKey: `batch:${Date.now()}:${normalizedItems.length}`,
+      dedupKey: `batch:${randomBytes(8).toString('hex')}:${normalizedItems.length}`,
     });
 
     const signerForBatch = this.walletClient

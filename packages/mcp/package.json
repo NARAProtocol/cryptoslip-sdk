@@ -1,6 +1,6 @@
 {
   "name": "@cryptoslip/mcp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "mcpName": "io.github.NARAProtocol/cryptoslip",
   "description": "PocketSlip MCP Server & OpenClaw Skill for CryptoSLIP Protocol V3.2 on Base Mainnet (8453)",
   "license": "MIT",
@@ -66,14 +66,14 @@
   },
   "dependencies": {
     "@cryptoslip/sdk": "file:../sdk",
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "viem": "^2.23.0",
-    "zod": "^4.6.7"
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "viem": "2.58.4",
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
-    "oxlint": "^1.81.0",
-    "typescript": "~6.0.2",
-    "vitest": "^5.0.1"
+    "@types/node": "24.19.2",
+    "oxlint": "1.94.0",
+    "typescript": "6.0.3",
+    "vitest": "5.1.1"
   }
 }

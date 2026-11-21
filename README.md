@@ -15,7 +15,7 @@ Official **Zero-DOM TypeScript 6 SDK (`@cryptoslip/sdk`)** and **Bounded Agent M
 | Package | Path | Description |
 | :--- | :--- | :--- |
 | **`@cryptoslip/sdk`** | [`packages/sdk`](./packages/sdk) | 12 tree-shakeable zero-DOM subpaths (`Node 22+`, Cloudflare Workers, Deno, Bun, Browsers): 1-tx `Multicall3` batch payouts (`1..500` items in `<50ms` offline signing), zero-key `withCryptoSlip()` HTTP `402` Hono/Fetch/Express middleware + `verifyPartnerWebhookSignature()`, `0%` 1st `Keep in Slips` (`1:1` non-commingled wallet privacy), Circle `TokenPaymasterV08` `USDC` network fee UserOps, VOPRF encrypted voice notes, verifiable EIP-712 receipts, and `BoundedAgentPolicy` spend firewall. |
-| **`@cryptoslip/mcp`** | [`packages/mcp`](./packages/mcp) | `PocketSlip` Model Context Protocol (`stdio`) server & OpenClaw [`SKILL.md`](./packages/mcp/SKILL.md). Provisions AI agents with a bounded `#` slip URL (`<1s` boot `Keep` rotation invalidating the `.env` link at `0%` fee) instead of a raw wallet private key, exposing 7 policy-guarded tools. |
+| **`@cryptoslip/mcp`** | [`packages/mcp`](./packages/mcp) | `PocketSlip` Model Context Protocol (`stdio`) server (`@cryptoslip/mcp@1.0.2`, Sigstore OIDC provenance) & OpenClaw skill ([`skills/cryptoslip/SKILL.md`](./skills/cryptoslip/SKILL.md)). Provisions AI agents with a bounded `#` slip URL (`<1s` boot `Keep` rotation invalidating the `.env` link at `0%` fee) instead of a raw wallet private key, exposing 7 policy-guarded tools. |
 
 ---
 
@@ -24,11 +24,11 @@ Official **Zero-DOM TypeScript 6 SDK (`@cryptoslip/sdk`)** and **Bounded Agent M
 ### From npm (or Direct Signed GitHub Release Tarball)
 
 ```bash
-# Standard install
-npm install @cryptoslip/sdk viem
+# Standard SDK install
+npm install @cryptoslip/sdk@1.0.0 viem
 
-# Or pin directly to the verified v1.0.0 GitHub Release tarball
-npm install https://github.com/NARAProtocol/cryptoslip-sdk/releases/download/v1.0.0/cryptoslip-sdk-1.0.0.tgz viem
+# Run the pinned, Sigstore-verified PocketSlip MCP server
+CRYPTOSLIP_URL="<YOUR_SLIP_URL>" npx @cryptoslip/mcp@1.0.2
 ```
 
 ---

@@ -914,6 +914,31 @@ describe('@cryptoslip/mcp PocketSlipVault & MCP Stdio Server (V-01..V-04)', () =
     expect(decodedSplit.functionName).toBe('splitAndPayWithPermit');
     expect(decodedSplit.args[1]).toBe(grossUpForExactNet(250_000n + 100_000n));
 
+    // 3b. T09 security regression: cross-asset human payouts (e.g. 0.001 cbBTC = 100,000 raw sats)
+    // MUST fail closed on a USDC PocketSlip BEFORE splitting or minting so raw units cannot be
+    // mispriced as USDC and bypass maxPerCallUsdMicro / maxDailyUsdMicro!
+    const callsBeforeCrossAsset = broadcastedCalls.length;
+    await expect(
+      usdcPocket.payHuman({ amount: '0.001', asset: 'cbBTC' }),
+    ).rejects.toThrow(/Cross-asset human payout/);
+    expect(broadcastedCalls.length).toBe(callsBeforeCrossAsset);
+
+    // Wallet-funded cross-asset payHuman MUST still enforce the USD cap via cbBTC reference pricing ($50 > $0.50 cap)
+    const walletFundedPocket = new PocketSlipVault({
+      stateFilePath: null,
+      publicClient: mockPublicClient,
+      policy: {
+        maxPerCallUsdMicro: 500_000n,
+        maxDailyUsdMicro: 5_000_000n,
+      },
+      customBatchExecutor: async () => {
+        throw new Error('customBatchExecutor must never run when policy rejects cross-asset spend');
+      },
+    });
+    await expect(
+      walletFundedPocket.payHuman({ amount: '0.001', asset: 'cbBTC' }),
+    ).rejects.toThrow(/exceeds maxPerCallUsdMicro/);
+
     // 4. Uncast createPublicClient({ chain: base, ... }) compiles cleanly under TS6 strictness
     const liveBaseClient = createPublicClient({
       chain: base,
