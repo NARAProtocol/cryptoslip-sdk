@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
   "name": "io.github.NARAProtocol/cryptoslip",
   "title": "CryptoSLIP PocketSlip MCP",
-  "description": "Bounded Base (8453) payment vouchers, 1-tx Multicall3 payouts & HTTP 402 client for AI agents without exposing wallet keys.",
+  "description": "Bounded Base (8453) payment vouchers, Multicall3 batch payouts & HTTP 402 MCP for AI agents.",
   "version": "1.0.0",
   "websiteUrl": "https://slip.naraprotocol.io",
   "repository": {
