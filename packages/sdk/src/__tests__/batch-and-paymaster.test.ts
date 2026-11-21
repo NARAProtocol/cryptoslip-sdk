@@ -881,8 +881,8 @@ describe('3. Serverless Circle TokenPaymasterV08 Parity & V-04 Transport (`payma
       { to: CANONICAL_VAULT_V33_ADDRESS, value: 0n, data: '0x12345678' as Hex },
       { to: MULTICALL3_ADDRESS, value: 500n, data: '0xabcdef01' as Hex },
     ];
-    expect(encodeSimple7702Calls(singleCalls)).toMatch(/^0x01/);
-    expect(encodeSimple7702Calls(batchCalls)).toMatch(/^0x01/);
+    expect(encodeSimple7702Calls(singleCalls)).toMatch(/^0xb61d27f6/);
+    expect(encodeSimple7702Calls(batchCalls)).toMatch(/^0x34fcd5be/);
     if (clientPm) {
       expect(encodeSimple7702Calls(singleCalls)).toBe(clientPm.encodeSimple7702Calls(singleCalls));
       expect(encodeSimple7702Calls(batchCalls)).toBe(clientPm.encodeSimple7702Calls(batchCalls));
