@@ -1,0 +1,32 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required: []
+    properties:
+      cryptoslipUrl:
+        type: string
+        description: "Bounded CryptoSLIP # fragment URL (rotated on boot via 0%-fee Keep on Base 8453)"
+      maxPerCallUsd:
+        type: string
+        default: "1.00"
+        description: "Maximum per-call spend ceiling in USD (BoundedAgentPolicy)"
+      maxDailyUsd:
+        type: string
+        default: "10.00"
+        description: "Maximum rolling 24h spend ceiling in USD"
+      maxSpendsPerMin:
+        type: string
+        default: "5"
+        description: "Maximum spend operations per rolling 60-second window"
+  commandFunction: |-
+    (config) => ({
+      command: 'npx',
+      args: ['-y', '@cryptoslip/mcp'],
+      env: {
+        ...(config.cryptoslipUrl ? { CRYPTOSLIP_URL: config.cryptoslipUrl } : {}),
+        ...(config.maxPerCallUsd ? { CRYPTOSLIP_MAX_PER_CALL_USD: String(config.maxPerCallUsd) } : {}),
+        ...(config.maxDailyUsd ? { CRYPTOSLIP_MAX_DAILY_USD: String(config.maxDailyUsd) } : {}),
+        ...(config.maxSpendsPerMin ? { CRYPTOSLIP_MAX_SPENDS_PER_MIN: String(config.maxSpendsPerMin) } : {})
+      }
+    })

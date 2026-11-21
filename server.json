@@ -1,0 +1,44 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.NARAProtocol/cryptoslip",
+  "title": "CryptoSLIP PocketSlip MCP",
+  "description": "Bounded Base (8453) payment vouchers, 1-tx Multicall3 payouts & HTTP 402 client for AI agents without exposing wallet keys.",
+  "version": "1.0.0",
+  "websiteUrl": "https://slip.naraprotocol.io",
+  "repository": {
+    "url": "https://github.com/NARAProtocol/cryptoslip-sdk",
+    "source": "github",
+    "subfolder": "packages/mcp"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@cryptoslip/mcp",
+      "version": "1.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "CRYPTOSLIP_URL",
+          "description": "Bounded CryptoSLIP # fragment URL; PocketSlip rotates claimSigner on boot at 0% fee",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "CRYPTOSLIP_MAX_PER_CALL_USD",
+          "description": "Deterministic per-call USD ceiling enforced outside LLM context (default 1.00)",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "CRYPTOSLIP_MAX_DAILY_USD",
+          "description": "Rolling 24h USD ceiling enforced by BoundedAgentPolicy (default 10.00)",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
