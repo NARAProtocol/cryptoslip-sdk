@@ -15,13 +15,8 @@ FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 
-COPY --from=builder --chown=node:node /app/packages/sdk/package.json ./packages/sdk/package.json
-COPY --from=builder --chown=node:node /app/packages/sdk/dist ./packages/sdk/dist
-COPY --from=builder --chown=node:node /app/packages/sdk/node_modules ./packages/sdk/node_modules
-COPY --from=builder --chown=node:node /app/packages/mcp/package.json ./packages/mcp/package.json
-COPY --from=builder --chown=node:node /app/packages/mcp/dist ./packages/mcp/dist
-COPY --from=builder --chown=node:node /app/packages/mcp/node_modules ./packages/mcp/node_modules
-COPY --chown=node:node LICENSE ./LICENSE
+COPY --from=builder --chown=node:node /app/packages ./packages
+COPY --chown=node:node LICENSE README.md glama.json server.json smithery.yaml ./
 
 USER node
 ENTRYPOINT ["node", "/app/packages/mcp/dist/cli.js"]
