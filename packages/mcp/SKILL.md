@@ -1,4 +1,4 @@
----
+﻿---
 name: cryptoslip-pocket-slip
 description: Non-custodial Base Mainnet (8453) PocketSlip wallet and settlement MCP skill for AI agents. Provision an agent with a $5 USDC, ETH, cbBTC, or NARA CryptoSLIP URL instead of a master wallet private key; auto-rotates on boot (<1s Keep at 0% fee), enforces an out-of-context BoundedAgentPolicy spend firewall, pays HTTP 402 APIs and merchants, sends 1-tap Telegram/X/SMS human bounties, executes 1-tx Multicall3 batch payouts, verifies cryptographic payment receipts, reclaims unclaimed slips, and collects 0.25% lifetime referral rewards.
 license: MIT
@@ -13,7 +13,6 @@ metadata:
     requires:
       bins:
         - node
-        - npx
       env:
         - CRYPTOSLIP_URL
       optionalEnv:
@@ -41,7 +40,7 @@ allowed-tools:
 
 # CryptoSLIP PocketSlip Skill (`@cryptoslip/mcp`)
 
-Give any autonomous agent bounded pocket funds on **Base Mainnet (`8453`)** using a single CryptoSLIP `#` URL — **zero master wallet private key required**.
+Give any autonomous agent bounded pocket funds on **Base Mainnet (`8453`)** using a single CryptoSLIP `#` URL â€” **zero master wallet private key required**.
 
 ## Why PocketSlip Exists
 
@@ -49,7 +48,7 @@ Give any autonomous agent bounded pocket funds on **Base Mainnet (`8453`)** usin
 2. **Deterministic Out-of-Context Firewall (`V-02` `BoundedAgentPolicy`):** Every signature passes through `BoundedAgentPolicy` inside the Node.js signer boundary before signing:
    - Per-call spend cap (`maxPerCallUsdMicro`, default `$0.50` in micro-API mode)
    - Sliding-window rate limits (`maxSpendsPerMinute`, `maxDailyUsdMicro`)
-   - Protocol & token contract destination denylist (`assertSafeDestination` — blocks zero/burn addresses, token contracts, vaults, routers, and public test keys)
+   - Protocol & token contract destination denylist (`assertSafeDestination` â€” blocks zero/burn addresses, token contracts, vaults, routers, and public test keys)
    - Optional recipient & domain allowlists (`allowedRecipients`, `allowedDomains`)
    - Recursive output secret scrubber (`redactSecretsFromToolOutput`) so raw claim secrets never enter LLM telemetry logs
    - Canonical Uniswap V4 `NARALiquidityHookV5` (`0x07d8F2Dfd121B10dE3176DeAb6A8C0eaa2646aCC`) enforcement for all `NARA` swaps
