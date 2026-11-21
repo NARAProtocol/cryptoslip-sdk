@@ -1,0 +1,34 @@
+﻿name: Publish @cryptoslip/mcp via npm Trusted Publisher (OIDC)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-mcp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Upgrade npm CLI for Trusted Publishing (OIDC)
+        run: npm install -g npm@latest && npm --version
+      - name: Install, test, and build @cryptoslip/sdk & @cryptoslip/mcp
+        run: |
+          npm ci --prefix packages/sdk --ignore-scripts
+          npm run build --prefix packages/sdk
+          npm test --prefix packages/sdk
+          npm ci --prefix packages/mcp --ignore-scripts
+          npm run build --prefix packages/mcp
+          npm test --prefix packages/mcp
+      - name: Prepare publishable @cryptoslip/mcp manifest (replace file:../sdk with ^1.0.0)
+        run: |
+          node -e "const fs=require('fs');const p='packages/mcp/package.json';const pkg=JSON.parse(fs.readFileSync(p,'utf8'));pkg.dependencies['@cryptoslip/sdk']='^1.0.0';fs.writeFileSync(p,JSON.stringify(pkg,null,2)+'\n');"
+      - name: Publish @cryptoslip/mcp with npm provenance (OIDC)
+        working-directory: packages/mcp
+        run: npm publish --provenance --access public

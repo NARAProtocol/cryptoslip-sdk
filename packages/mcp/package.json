@@ -1,6 +1,6 @@
 {
   "name": "@cryptoslip/mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "mcpName": "io.github.NARAProtocol/cryptoslip",
   "description": "PocketSlip MCP Server & OpenClaw Skill for CryptoSLIP Protocol V3.2 on Base Mainnet (8453)",
   "license": "MIT",
