@@ -1,0 +1,119 @@
+{
+  "name": "@cryptoslip/sdk",
+  "version": "1.0.0",
+  "description": "Official TypeScript SDK for CryptoSLIP Protocol V3.2 on Base Mainnet (8453)",
+  "license": "MIT",
+  "homepage": "https://slip.naraprotocol.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NARAProtocol/cryptoslip-sdk.git",
+    "directory": "packages/sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/NARAProtocol/cryptoslip-sdk/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "cryptoslip",
+    "base",
+    "usdc",
+    "x402",
+    "mcp",
+    "multicall3",
+    "eip-712",
+    "eip-3009",
+    "payments",
+    "agents"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./constants": {
+      "types": "./dist/constants.d.ts",
+      "default": "./dist/constants.js"
+    },
+    "./abi": {
+      "types": "./dist/abi.d.ts",
+      "default": "./dist/abi.js"
+    },
+    "./link": {
+      "types": "./dist/link.d.ts",
+      "default": "./dist/link.js"
+    },
+    "./permits": {
+      "types": "./dist/permits.d.ts",
+      "default": "./dist/permits.js"
+    },
+    "./batch": {
+      "types": "./dist/batch.d.ts",
+      "default": "./dist/batch.js"
+    },
+    "./operations": {
+      "types": "./dist/operations.d.ts",
+      "default": "./dist/operations.js"
+    },
+    "./paymaster": {
+      "types": "./dist/paymaster.d.ts",
+      "default": "./dist/paymaster.js"
+    },
+    "./voice": {
+      "types": "./dist/voice.d.ts",
+      "default": "./dist/voice.js"
+    },
+    "./receipts": {
+      "types": "./dist/receipts.d.ts",
+      "default": "./dist/receipts.js"
+    },
+    "./middleware": {
+      "types": "./dist/middleware.d.ts",
+      "default": "./dist/middleware.js"
+    },
+    "./policy": {
+      "types": "./dist/policy.d.ts",
+      "default": "./dist/policy.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "oxlint src"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.8.1",
+    "@noble/hashes": "^1.7.1",
+    "scrypt-js": "^3.0.1",
+    "viem": "^2.23.0"
+  },
+  "peerDependencies": {
+    "ethers": "^6.17.0"
+  },
+  "peerDependenciesMeta": {
+    "ethers": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "ethers": "^6.17.0",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vitest": "^5.0.1"
+  }
+}
