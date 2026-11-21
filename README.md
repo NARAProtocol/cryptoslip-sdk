@@ -1,6 +1,8 @@
 # CryptoSLIP TypeScript SDK & PocketSlip MCP (`v1.0.0`)
 
 [![CI](https://github.com/NARAProtocol/cryptoslip-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/NARAProtocol/cryptoslip-sdk/actions/workflows/ci.yml)
+[![npm @cryptoslip/sdk](https://img.shields.io/npm/v/@cryptoslip/sdk?label=%40cryptoslip%2Fsdk)](https://www.npmjs.com/package/@cryptoslip/sdk)
+[![npm @cryptoslip/mcp](https://img.shields.io/npm/v/@cryptoslip/mcp?label=%40cryptoslip%2Fmcp)](https://www.npmjs.com/package/@cryptoslip/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Network: Base 8453](https://img.shields.io/badge/Base_Mainnet-8453-0052FF.svg)](https://basescan.org/address/0x3f80aa68Fb4834d6E119EE1cf932C14419Cf63EB#code)
 
