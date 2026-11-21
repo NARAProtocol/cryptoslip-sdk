@@ -13,8 +13,10 @@ Instead of handing an LLM standing authority over a master private key, hand it 
 
 ## Quick Start
 
+Install or invoke the exact Sigstore-verified version (`1.0.2`):
+
 ```bash
-CRYPTOSLIP_URL="<YOUR_SLIP_URL>" npx @cryptoslip/mcp
+CRYPTOSLIP_URL="<YOUR_SLIP_URL>" npx @cryptoslip/mcp@1.0.2
 ```
 
 ### Claude Desktop / Claude Code / Cursor Configuration
@@ -24,7 +26,7 @@ CRYPTOSLIP_URL="<YOUR_SLIP_URL>" npx @cryptoslip/mcp
   "mcpServers": {
     "cryptoslip": {
       "command": "npx",
-      "args": ["-y", "@cryptoslip/mcp"],
+      "args": ["@cryptoslip/mcp@1.0.2"],
       "env": {
         "CRYPTOSLIP_URL": "<YOUR_SLIP_URL>",
         "CRYPTOSLIP_MAX_PER_CALL_USD": "0.50",
