@@ -1,4 +1,4 @@
-name: Publish to Official MCP Registry
+﻿name: Publish to Official MCP Registry
 
 on:
   workflow_dispatch:
@@ -12,6 +12,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Wait for npm CDN to index current @cryptoslip/mcp version
+        run: |
+          VER=$(node -p "require('./server.json').packages[0].version")
+          echo "Waiting for @cryptoslip/mcp@$VER on registry.npmjs.org..."
+          for i in $(seq 1 30); do
+            if npm view "@cryptoslip/mcp@$VER" version >/dev/null 2>&1; then
+              echo "Found @cryptoslip/mcp@$VER on npm!"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "@cryptoslip/mcp@$VER not yet visible after 150s" && exit 1
       - name: Install mcp-publisher
         run: |
           curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.10/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
