@@ -1,0 +1,25 @@
+{
+  "name": "cryptoslip-sdk-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Official TypeScript SDK (@cryptoslip/sdk) and PocketSlip MCP Server (@cryptoslip/mcp) for CryptoSLIP Protocol V3.2 on Base Mainnet (8453)",
+  "license": "MIT",
+  "homepage": "https://slip.naraprotocol.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NARAProtocol/cryptoslip-sdk.git"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/sdk",
+    "packages/mcp"
+  ],
+  "scripts": {
+    "build": "npm --prefix packages/sdk run build && npm --prefix packages/mcp run build",
+    "typecheck": "npm --prefix packages/sdk run typecheck && npm --prefix packages/mcp run typecheck",
+    "lint": "npm --prefix packages/sdk run lint && npm --prefix packages/mcp run lint",
+    "test": "npm --prefix packages/sdk test && npm --prefix packages/mcp test"
+  }
+}

@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typecheck, Lint, Test & Build (Node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install @cryptoslip/sdk dependencies
+        working-directory: packages/sdk
+        run: npm install --no-audit --no-fund
+
+      - name: Build & verify @cryptoslip/sdk (TypeScript 6, Oxlint, Vitest)
+        working-directory: packages/sdk
+        run: |
+          npm run build
+          npm run typecheck
+          npm run lint
+          npm test
+
+      - name: Install @cryptoslip/mcp dependencies
+        working-directory: packages/mcp
+        run: npm install --no-audit --no-fund
+
+      - name: Build & verify @cryptoslip/mcp (TypeScript 6, Oxlint, Vitest)
+        working-directory: packages/mcp
+        run: |
+          npm run build
+          npm run typecheck
+          npm run lint
+          npm test
