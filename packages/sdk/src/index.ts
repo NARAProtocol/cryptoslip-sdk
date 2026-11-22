@@ -9,3 +9,4 @@ export * from './voice.js';
 export * from './receipts.js';
 export * from './middleware.js';
 export * from './policy.js';
+export * from './recovery.js';

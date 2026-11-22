@@ -44,6 +44,7 @@ import { encryptVoiceEnvelope, uploadBurnOnPlayVoice } from '@cryptoslip/sdk/voi
 import { createSignedPaymentReceipt, verifyPaymentReceiptOnChain } from '@cryptoslip/sdk/receipts';
 import { withCryptoSlip, attachRefundSlipHeader } from '@cryptoslip/sdk/middleware';
 import { BoundedAgentPolicy, createPolicyGuardedSigner } from '@cryptoslip/sdk/policy';
+import { scanPocketSlipsFromChain, findActiveSlipByClaimSigner } from '@cryptoslip/sdk/recovery';
 ```
 
 ---

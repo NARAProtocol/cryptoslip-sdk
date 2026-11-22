@@ -1,4 +1,4 @@
-# CryptoSLIP TypeScript SDK & PocketSlip MCP (`v1.0.0`)
+# CryptoSLIP TypeScript SDK (`v1.0.1`) & PocketSlip MCP (`v1.0.3`)
 
 [![CI](https://github.com/NARAProtocol/cryptoslip-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/NARAProtocol/cryptoslip-sdk/actions/workflows/ci.yml)
 [![npm @cryptoslip/sdk](https://img.shields.io/npm/v/@cryptoslip/sdk?label=%40cryptoslip%2Fsdk)](https://www.npmjs.com/package/@cryptoslip/sdk)
@@ -14,8 +14,8 @@ Official **Zero-DOM TypeScript 6 SDK (`@cryptoslip/sdk`)** and **Bounded Agent M
 
 | Package | Path | Description |
 | :--- | :--- | :--- |
-| **`@cryptoslip/sdk`** | [`packages/sdk`](./packages/sdk) | 12 tree-shakeable zero-DOM subpaths (`Node 22+`, Cloudflare Workers, Deno, Bun, Browsers): 1-tx `Multicall3` batch payouts (`1..500` items in `<50ms` offline signing), zero-key `withCryptoSlip()` HTTP `402` Hono/Fetch/Express middleware + `verifyPartnerWebhookSignature()`, `0%` 1st `Keep in Slips` (`1:1` non-commingled wallet privacy), Circle `TokenPaymasterV08` `USDC` network fee UserOps, VOPRF encrypted voice notes, verifiable EIP-712 receipts, and `BoundedAgentPolicy` spend firewall. |
-| **`@cryptoslip/mcp`** | [`packages/mcp`](./packages/mcp) | `PocketSlip` Model Context Protocol (`stdio`) server (`@cryptoslip/mcp@1.0.2`, Sigstore OIDC provenance) & OpenClaw skill ([`skills/cryptoslip/SKILL.md`](./skills/cryptoslip/SKILL.md)). Provisions AI agents with a bounded `#` slip URL (`<1s` boot `Keep` rotation invalidating the `.env` link at `0%` fee) instead of a raw wallet private key, exposing 7 policy-guarded tools. |
+| **`@cryptoslip/sdk`** | [`packages/sdk`](./packages/sdk) | 13 tree-shakeable zero-DOM subpaths (`Node 22+`, Cloudflare Workers, Deno, Bun, Browsers): 1-tx `Multicall3` batch payouts (`1..500` items in `<50ms` offline signing), zero-key `withCryptoSlip()` HTTP `402` Hono/Fetch/Express middleware + `verifyPartnerWebhookSignature()`, `0%` 1st `Keep in Slips` (`1:1` non-commingled wallet privacy), sub-200ms `Multicall3` deterministic lineage scanner (`@cryptoslip/sdk/recovery`), Circle `TokenPaymasterV08` `USDC` network fee UserOps, VOPRF encrypted voice notes, verifiable EIP-712 receipts, and `BoundedAgentPolicy` spend firewall. |
+| **`@cryptoslip/mcp`** | [`packages/mcp`](./packages/mcp) | `PocketSlip` Model Context Protocol (`stdio`) server (`@cryptoslip/mcp@1.0.3`, Sigstore OIDC provenance) & OpenClaw skill ([`skills/cryptoslip/SKILL.md`](./skills/cryptoslip/SKILL.md)). Provisions AI agents with a bounded `#` slip URL (`<1s` boot `Keep` rotation invalidating the `.env` link at `0%` fee, two-slot crash-safe `pendingTransition` journal, and stateless container recovery via `CRYPTOSLIP_OPERATOR_KEY`) instead of a raw wallet private key, exposing 7 policy-guarded tools. |
 
 ---
 
@@ -25,10 +25,10 @@ Official **Zero-DOM TypeScript 6 SDK (`@cryptoslip/sdk`)** and **Bounded Agent M
 
 ```bash
 # Standard SDK install
-npm install @cryptoslip/sdk@1.0.0 viem
+npm install @cryptoslip/sdk viem
 
 # Run the pinned, Sigstore-verified PocketSlip MCP server
-CRYPTOSLIP_URL="<YOUR_SLIP_URL>" npx @cryptoslip/mcp@1.0.2
+CRYPTOSLIP_URL="<YOUR_SLIP_URL>" npx @cryptoslip/mcp@1.0.3
 ```
 
 ---

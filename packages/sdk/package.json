@@ -1,6 +1,6 @@
 {
   "name": "@cryptoslip/sdk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Official TypeScript SDK for CryptoSLIP Protocol V3.2 on Base Mainnet (8453)",
   "license": "MIT",
   "homepage": "https://slip.naraprotocol.io",
@@ -78,6 +78,10 @@
     "./middleware": {
       "types": "./dist/middleware.d.ts",
       "default": "./dist/middleware.js"
+    },
+    "./recovery": {
+      "types": "./dist/recovery.d.ts",
+      "default": "./dist/recovery.js"
     },
     "./policy": {
       "types": "./dist/policy.d.ts",

@@ -13,10 +13,13 @@ RUN npm run build --prefix packages/mcp && npm prune --prefix packages/mcp --omi
 
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
+ENV CRYPTOSLIP_STATE_PATH=/home/node/.cryptoslip-mcp/pocket-state.json
 WORKDIR /app
 
 COPY --from=builder --chown=node:node /app/packages ./packages
 COPY --chown=node:node LICENSE README.md glama.json server.json smithery.yaml ./
+RUN mkdir -p /home/node/.cryptoslip-mcp && chown -R node:node /home/node/.cryptoslip-mcp
 
+VOLUME ["/home/node/.cryptoslip-mcp"]
 USER node
 ENTRYPOINT ["node", "/app/packages/mcp/dist/cli.js"]
