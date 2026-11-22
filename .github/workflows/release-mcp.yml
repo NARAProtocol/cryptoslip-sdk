@@ -36,49 +36,68 @@ jobs:
           SDK_VER=$(node -p "require('./packages/sdk/package.json').version")
           if npm view "@cryptoslip/sdk@$SDK_VER" version >/dev/null 2>&1; then
             echo "Verified @cryptoslip/sdk@$SDK_VER on npm — linking dependency."
-            node -e "const fs=require('fs');const p='packages/mcp/package.json';const pkg=JSON.parse(fs.readFileSync(p,'utf8'));pkg.dependencies['@cryptoslip/sdk']=process.argv[1];fs.writeFileSync(p,JSON.stringify(pkg,null,2)+'\n');" "$SDK_VER"
+            SDK_VER="$SDK_VER" node --input-type=commonjs <<'EOF'
+          const fs = require('fs');
+          const p = 'packages/mcp/package.json';
+          const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+          pkg.dependencies['@cryptoslip/sdk'] = process.env.SDK_VER;
+          fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+          EOF
           else
             echo "@cryptoslip/sdk@$SDK_VER not yet OIDC-configured on npm — vendoring compiled SDK into @cryptoslip/mcp/dist/_vendor_sdk for 100% standalone runtime."
-            node -e "
-              const fs = require('fs');
-              const path = require('path');
-              fs.cpSync('packages/sdk/dist', 'packages/mcp/dist/_vendor_sdk', { recursive: true });
-              for (const name of fs.readdirSync('packages/mcp/dist')) {
-                const full = path.join('packages/mcp/dist', name);
-                if (!fs.statSync(full).isFile()) continue;
-                if (!name.endsWith('.js') && !name.endsWith('.d.ts')) continue;
-                const src = fs.readFileSync(full, 'utf8');
-                const next = src.replace(/(['\"])@cryptoslip\/sdk\1/g, \"'./_vendor_sdk/index.js'\");
-                if (next !== src) fs.writeFileSync(full, next);
-              }
-              const sdkPkg = JSON.parse(fs.readFileSync('packages/sdk/package.json', 'utf8'));
-              const mcpPkg = JSON.parse(fs.readFileSync('packages/mcp/package.json', 'utf8'));
-              delete mcpPkg.dependencies['@cryptoslip/sdk'];
-              for (const [dep, ver] of Object.entries(sdkPkg.dependencies || {})) {
-                if (!mcpPkg.dependencies[dep]) mcpPkg.dependencies[dep] = ver;
-              }
-              fs.writeFileSync('packages/mcp/package.json', JSON.stringify(mcpPkg, null, 2) + '\n');
-            "
+            node --input-type=commonjs <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          fs.cpSync('packages/sdk/dist', 'packages/mcp/dist/_vendor_sdk', { recursive: true });
+          for (const name of fs.readdirSync('packages/mcp/dist')) {
+            const full = path.join('packages/mcp/dist', name);
+            if (!fs.statSync(full).isFile()) continue;
+            if (!name.endsWith('.js') && !name.endsWith('.d.ts')) continue;
+            const src = fs.readFileSync(full, 'utf8');
+            const next = src.replace(/(['"])@cryptoslip\/sdk\1/g, "'./_vendor_sdk/index.js'");
+            if (next !== src) fs.writeFileSync(full, next);
+          }
+          const sdkPkg = JSON.parse(fs.readFileSync('packages/sdk/package.json', 'utf8'));
+          const mcpPkg = JSON.parse(fs.readFileSync('packages/mcp/package.json', 'utf8'));
+          delete mcpPkg.dependencies['@cryptoslip/sdk'];
+          for (const [dep, ver] of Object.entries(sdkPkg.dependencies || {})) {
+            if (!mcpPkg.dependencies[dep]) mcpPkg.dependencies[dep] = ver;
+          }
+          fs.writeFileSync('packages/mcp/package.json', JSON.stringify(mcpPkg, null, 2) + '\n');
+          EOF
+            rm -rf packages/mcp/node_modules/@cryptoslip/sdk
+            npm install --prefix packages/mcp --no-package-lock --ignore-scripts --no-audit --no-fund
           fi
       - name: Smoke-test compiled @cryptoslip/mcp CLI entrypoint before publish
         run: |
-          node -e "
-            const { spawn } = require('child_process');
-            const child = spawn(process.execPath, ['packages/mcp/dist/cli.js'], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, CRYPTOSLIP_URL: '' } });
-            let out = '';
-            child.stdout.on('data', (c) => {
-              out += c.toString();
-              if (out.split('\n').filter(Boolean).length >= 2) {
-                if (!out.includes('cryptoslip_status')) { process.exit(1); }
-                child.kill();
-                process.exit(0);
+          node --input-type=commonjs <<'EOF'
+          const { spawn } = require('child_process');
+          const child = spawn(process.execPath, ['packages/mcp/dist/cli.js'], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: { ...process.env, CRYPTOSLIP_URL: '' },
+          });
+          child.stderr.on('data', (d) => process.stderr.write(d));
+          let out = '';
+          child.stdout.on('data', (c) => {
+            out += c.toString();
+            if (out.split('\n').filter(Boolean).length >= 2) {
+              if (!out.includes('cryptoslip_status')) {
+                console.error('Unexpected stdout:', out);
+                process.exit(1);
               }
-            });
-            child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'smoke', version: '1.0.3' } } }) + '\n');
-            child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
-            child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }) + '\n');
-            setTimeout(() => { child.kill(); process.exit(1); }, 10000);
-          "
+              child.kill();
+              process.exit(0);
+            }
+          });
+          child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'smoke', version: '1.0.3' } } }) + '\n');
+          child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+          child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }) + '\n');
+          setTimeout(() => {
+            console.error('Smoke test timed out. stdout so far:', out);
+            child.kill();
+            process.exit(1);
+          }, 15000);
+          EOF
       - name: Publish @cryptoslip/mcp with npm provenance (OIDC)
         working-directory: packages/mcp
         run: npm publish --provenance --access public
