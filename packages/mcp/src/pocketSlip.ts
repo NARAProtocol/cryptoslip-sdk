@@ -36,6 +36,7 @@ import {
   decimalsForAsset,
   estimateUsdMicro,
   executeBatchPayoutSlips,
+  findActiveSlipByClaimSigner,
   formatReceiptCsvRow,
   fromViemWalletClient,
   grossUpForExactNet,
@@ -49,6 +50,7 @@ import {
   redactSecretsFromToolOutput,
   refundSlipDirect,
   renderPrintableReceiptHtml,
+  scanPocketSlipsFromChain,
   scanReclaimableSlips,
   splitAndPay,
   verifyPaymentReceiptOnChain,
@@ -72,10 +74,23 @@ import {
 const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
 
 export class PocketSlipError extends Error {
-  constructor(message: string) {
+  readonly code?: string;
+  constructor(message: string, code?: string) {
     super(message);
     this.name = 'PocketSlipError';
+    if (code) this.code = code;
   }
+}
+
+export interface PocketSlipPendingTransition {
+  kind: 'keep' | 'split';
+  vault: VaultTag;
+  parentSlipId: string;
+  asset: SdkAssetSymbol;
+  candidatePrivateKey: Hex;
+  candidateSigner: Address;
+  expectedChangeUnits?: string;
+  recordedAt: string;
 }
 
 export interface PocketSlipPersistedState {
@@ -86,6 +101,7 @@ export interface PocketSlipPersistedState {
   asset: SdkAssetSymbol;
   activeClaimPrivateKey?: Hex;
   activeClaimSigner?: Address;
+  pendingTransition?: PocketSlipPendingTransition;
   operatorPrivateKey: Hex;
   operatorAddress: Address;
   bootRotated: boolean;
@@ -323,12 +339,14 @@ export class PocketSlipVault {
 
   private operatorPrivateKey: Hex;
   private operatorAddress: Address;
+  private readonly hasExplicitOperatorKey: boolean;
   private originalLineageHash: Hex;
   private activeSlipId: string | null = null;
   private activeVault: VaultTag = ISSUE_VAULT;
   private activeAsset: SdkAssetSymbol = 'USDC';
   private activeClaimPrivateKey?: Hex;
   private activeClaimSigner?: Address;
+  private pendingTransition?: PocketSlipPendingTransition;
   private bootRotated = false;
   private bootRotationTxHash?: Hex;
   private createdRevocableSlipIds: string[] = [];
@@ -362,20 +380,32 @@ export class PocketSlipVault {
     this.customBatchExecutor = config.customBatchExecutor ?? executeBatchPayoutSlips;
 
     const persisted = this.readPersistedState();
+    const envOpKeyRaw = process.env.CRYPTOSLIP_OPERATOR_KEY?.trim();
+    const explicitOpKey =
+      config.operatorPrivateKey ?? (envOpKeyRaw ? (envOpKeyRaw as Hex) : undefined);
+
+    this.hasExplicitOperatorKey = Boolean(explicitOpKey || persisted?.operatorPrivateKey);
+
     const initialOpKey =
-      config.operatorPrivateKey ??
-      (this.walletClient?.account && 'source' in this.walletClient.account
-        ? undefined
-        : persisted?.operatorPrivateKey) ??
+      explicitOpKey ??
+      persisted?.operatorPrivateKey ??
       generateRandomSecp256k1Key();
 
-    this.operatorPrivateKey = (
-      initialOpKey.startsWith('0x') ? initialOpKey : `0x${initialOpKey}`
-    ) as Hex;
+    const normalizedOp = initialOpKey.trim().startsWith('0x')
+      ? initialOpKey.trim()
+      : `0x${initialOpKey.trim()}`;
+    if (!/^0x[0-9a-fA-F]{64}$/.test(normalizedOp)) {
+      throw new PocketSlipError(
+        'operatorPrivateKey / CRYPTOSLIP_OPERATOR_KEY must be a valid 32-byte hex private key.',
+      );
+    }
+
+    this.operatorPrivateKey = normalizedOp as Hex;
     this.operatorAddress = this.walletClient?.account
       ? getAddress(this.walletClient.account.address)
       : getAddress(privateKeyToAccount(this.operatorPrivateKey).address);
-    this.originalLineageHash = persisted?.originalLineageHash ?? ('0x' + '00'.repeat(32)) as Hex;
+    this.originalLineageHash = persisted?.originalLineageHash ?? (('0x' + '00'.repeat(32)) as Hex);
+    this.pendingTransition = persisted?.pendingTransition;
     if (persisted?.createdRevocableSlipIds) {
       this.createdRevocableSlipIds = [...persisted.createdRevocableSlipIds];
     }
@@ -418,6 +448,7 @@ export class PocketSlipVault {
       asset: this.activeAsset,
       ...(this.activeClaimPrivateKey ? { activeClaimPrivateKey: this.activeClaimPrivateKey } : {}),
       ...(this.activeClaimSigner ? { activeClaimSigner: this.activeClaimSigner } : {}),
+      ...(this.pendingTransition ? { pendingTransition: this.pendingTransition } : {}),
       operatorPrivateKey: this.operatorPrivateKey,
       operatorAddress: this.operatorAddress,
       bootRotated: this.bootRotated,
@@ -428,10 +459,118 @@ export class PocketSlipVault {
   }
 
   /**
+   * Reconciles a write-ahead `pendingTransition` (`keep` or `split`) against Base Mainnet
+   * without ever clobbering `activeClaimPrivateKey` when a broadcast failed before landing.
+   */
+  private async reconcilePendingTransition(
+    persisted?: PocketSlipPersistedState | null,
+    opts?: { preserveIfParentStillActive?: boolean },
+  ): Promise<{ promoted: boolean; balanceUnits?: string }> {
+    const pending = this.pendingTransition ?? persisted?.pendingTransition;
+    if (!pending) return { promoted: false };
+
+    const parent = await readOnChainSlip({
+      publicClient: this.publicClient,
+      slipId: pending.parentSlipId,
+      vault: pending.vault,
+    });
+
+    if (parent.status === SlipStatus.CASHED || parent.status === SlipStatus.REVOKED || parent.status === SlipStatus.NONE) {
+      this.pendingTransition = undefined;
+      this.syncStateToDisk();
+      return { promoted: false };
+    }
+
+    const recordedMs = Date.parse(pending.recordedAt || '');
+    const withinMempoolWindow =
+      Boolean(opts?.preserveIfParentStillActive) &&
+      Number.isFinite(recordedMs) &&
+      Date.now() - recordedMs < 90_000;
+
+    if (pending.kind === 'keep') {
+      if (
+        parent.status === SlipStatus.ACTIVE &&
+        parent.claimSigner.toLowerCase() === pending.candidateSigner.toLowerCase()
+      ) {
+        this.activeSlipId = pending.parentSlipId;
+        this.activeVault = pending.vault;
+        this.activeAsset = parent.asset;
+        this.activeClaimPrivateKey = pending.candidatePrivateKey;
+        this.activeClaimSigner = pending.candidateSigner;
+        this.bootRotated = true;
+        this.pendingTransition = undefined;
+        this.syncStateToDisk();
+        return { promoted: true, balanceUnits: parent.amount.toString() };
+      }
+      if (parent.status === SlipStatus.ACTIVE && parent.nonce === 0n && !withinMempoolWindow) {
+        this.pendingTransition = undefined;
+        this.syncStateToDisk();
+      }
+      return { promoted: false };
+    }
+
+    // pending.kind === 'split'
+    const currentActiveSigner = (
+      this.activeClaimSigner ?? persisted?.activeClaimSigner ?? ''
+    ).toLowerCase();
+
+    if (
+      parent.status === SlipStatus.ACTIVE &&
+      currentActiveSigner &&
+      parent.claimSigner.toLowerCase() === currentActiveSigner
+    ) {
+      if (!withinMempoolWindow) {
+        // Split broadcast never landed on Base; keep the untouched parent slip key intact!
+        this.pendingTransition = undefined;
+        this.syncStateToDisk();
+      }
+      return { promoted: false };
+    }
+
+    if (parent.status === SlipStatus.SPLIT) {
+      const expectedChange = BigInt(pending.expectedChangeUnits ?? '0');
+      if (expectedChange === 0n) {
+        this.activeSlipId = null;
+        this.activeClaimPrivateKey = undefined;
+        this.activeClaimSigner = undefined;
+        this.bootRotated = true;
+        this.pendingTransition = undefined;
+        this.syncStateToDisk();
+        return { promoted: true, balanceUnits: '0' };
+      }
+
+      const child = await findActiveSlipByClaimSigner({
+        publicClient: this.publicClient,
+        vault: pending.vault,
+        targetClaimSigner: pending.candidateSigner,
+        startSlipId: BigInt(pending.parentSlipId) + 1n,
+      });
+
+      if (child) {
+        this.activeSlipId = child.slipId.toString();
+        this.activeVault = pending.vault;
+        this.activeAsset = child.asset;
+        this.activeClaimPrivateKey = pending.candidatePrivateKey;
+        this.activeClaimSigner = pending.candidateSigner;
+        this.bootRotated = true;
+        this.pendingTransition = undefined;
+        this.syncStateToDisk();
+        return { promoted: true, balanceUnits: child.amount.toString() };
+      }
+
+      // Parent is SPLIT and child was already spent/settled later
+      this.pendingTransition = undefined;
+      this.syncStateToDisk();
+    }
+
+    return { promoted: false };
+  }
+
+  /**
    * `V-01` Boot Auto-Keep:
    * Immediately checks the configured `CRYPTOSLIP_URL` on Base Mainnet. If unrotated (`nonces == 0`),
-   * executes `keepSlip()` (`0%` protocol fee) rotating `claimSigner` to a fresh local key persisted in
-   * `0600` local storage, invalidating the `.env` `#k` link on-chain in `<1s`.
+   * executes `keepSlip()` (`0%` protocol fee) rotating `claimSigner` to a deterministic holder key
+   * derived from `operatorPrivateKey` and persisted in `0600` local storage, invalidating the `.env` `#k` link on-chain in `<1s`.
    */
   async bootAndRotate(): Promise<BootRotateResult | null> {
     if (this.bootPromise) return this.bootPromise;
@@ -446,6 +585,39 @@ export class PocketSlipVault {
 
   private async performBootAndRotate(): Promise<BootRotateResult | null> {
     const persisted = this.readPersistedState();
+    if (persisted) {
+      this.activeVault = persisted.vault;
+      this.activeAsset = persisted.asset;
+      this.bootRotated = persisted.bootRotated;
+      this.bootRotationTxHash = persisted.bootRotationTxHash;
+      if (persisted.activeSlipId && persisted.activeClaimPrivateKey && persisted.activeClaimSigner) {
+        this.activeSlipId = persisted.activeSlipId;
+        this.activeClaimPrivateKey = persisted.activeClaimPrivateKey;
+        this.activeClaimSigner = persisted.activeClaimSigner;
+      }
+    }
+
+    // 0. Heal any interrupted write-ahead `keep` or `split` transition before inspecting state
+    const healed = await this.reconcilePendingTransition(persisted);
+    if (healed.promoted) {
+      this.initialized = true;
+      if (!this.activeSlipId || !this.activeClaimSigner) {
+        return null;
+      }
+      const units = healed.balanceUnits ?? '0';
+      return {
+        bootRotated: false,
+        resumedFromLocalState: true,
+        slipId: this.activeSlipId,
+        vault: this.activeVault,
+        asset: this.activeAsset,
+        balanceUnits: units,
+        humanBalance: formatUnits(BigInt(units), decimalsForAsset(this.activeAsset)),
+        activeClaimSigner: this.activeClaimSigner,
+        operatorAddress: this.operatorAddress,
+        ...(this.bootRotationTxHash ? { bootRotationTxHash: this.bootRotationTxHash } : {}),
+      };
+    }
 
     if (!this.rawSlipUrl || !this.rawSlipUrl.trim()) {
       if (persisted?.activeSlipId && persisted.activeClaimPrivateKey) {
@@ -481,6 +653,40 @@ export class PocketSlipVault {
           };
         }
       }
+
+      // Stateless container recovery via explicit CRYPTOSLIP_OPERATOR_KEY when CRYPTOSLIP_URL is omitted
+      if (this.hasExplicitOperatorKey) {
+        const recovered = await scanPocketSlipsFromChain({
+          publicClient: this.publicClient,
+          recoveryMasterKey: this.operatorPrivateKey,
+          vault: this.activeVault,
+          stopOnFirstMatch: true,
+        }).catch(() => []);
+        const top = recovered[0];
+        if (top) {
+          this.activeSlipId = top.slipId;
+          this.activeVault = top.vault;
+          this.activeAsset = top.asset;
+          this.activeClaimPrivateKey = top.claimPrivateKey;
+          this.activeClaimSigner = top.claimSigner;
+          this.bootRotated = true;
+          this.pendingTransition = undefined;
+          this.initialized = true;
+          this.syncStateToDisk();
+          return {
+            bootRotated: false,
+            resumedFromLocalState: true,
+            slipId: top.slipId,
+            vault: top.vault,
+            asset: top.asset,
+            balanceUnits: top.amountUnits.toString(),
+            humanBalance: formatUnits(top.amountUnits, decimalsForAsset(top.asset)),
+            activeClaimSigner: top.claimSigner,
+            operatorAddress: this.operatorAddress,
+          };
+        }
+      }
+
       this.initialized = true;
       return null;
     }
@@ -542,6 +748,59 @@ export class PocketSlipVault {
       vault: parsed.vault,
     });
 
+    const alreadyRotatedOrSplit =
+      initialOnChain.status === SlipStatus.SPLIT ||
+      (initialOnChain.status === SlipStatus.ACTIVE &&
+        initialOnChain.claimSigner.toLowerCase() !== parsed.claimAddress.toLowerCase());
+
+      if (
+        persisted &&
+        persisted.originalLineageHash === lineageHash &&
+        persisted.bootRotated &&
+        persisted.activeSlipId === null &&
+        alreadyRotatedOrSplit
+      ) {
+        // PocketSlip was legitimately 100% spent (`expectedChange === 0n`); stay booted cleanly without throwing
+        this.activeSlipId = null;
+        this.activeClaimPrivateKey = undefined;
+        this.activeClaimSigner = undefined;
+        this.initialized = true;
+        return null;
+      }
+
+    if (alreadyRotatedOrSplit && this.hasExplicitOperatorKey) {
+      const recovered = await scanPocketSlipsFromChain({
+        publicClient: this.publicClient,
+        recoveryMasterKey: this.operatorPrivateKey,
+        vault: parsed.vault,
+        lineageRootSlipId: parsed.id,
+        stopOnFirstMatch: true,
+      }).catch(() => []);
+      const top = recovered[0];
+      if (top) {
+        this.activeSlipId = top.slipId;
+        this.activeVault = top.vault;
+        this.activeAsset = top.asset;
+        this.activeClaimPrivateKey = top.claimPrivateKey;
+        this.activeClaimSigner = top.claimSigner;
+        this.bootRotated = true;
+        this.pendingTransition = undefined;
+        this.initialized = true;
+        this.syncStateToDisk();
+        return {
+          bootRotated: false,
+          resumedFromLocalState: true,
+          slipId: top.slipId,
+          vault: top.vault,
+          asset: top.asset,
+          balanceUnits: top.amountUnits.toString(),
+          humanBalance: formatUnits(top.amountUnits, decimalsForAsset(top.asset)),
+          activeClaimSigner: top.claimSigner,
+          operatorAddress: this.operatorAddress,
+        };
+      }
+    }
+
     if (initialOnChain.status !== SlipStatus.ACTIVE) {
       throw new PocketSlipError(
         `PocketSlip #${parsed.id} is not active on Base (status=${initialOnChain.status}).`,
@@ -555,38 +814,55 @@ export class PocketSlipVault {
 
     // 3. V-01 Mandatory Boot Auto-Keep when slip is unrotated (`nonces == 0`)
     if (initialOnChain.nonce === 0n && !initialOnChain.refundFeeRequired) {
+      if (this.stateFilePath === null && !this.hasExplicitOperatorKey) {
+        throw new PocketSlipError(
+          'KEY_PERSISTENCE_REQUIRED: Refusing irreversible Boot Auto-Keep without a persistent stateFilePath or an explicit operatorPrivateKey / CRYPTOSLIP_OPERATOR_KEY.',
+        );
+      }
+
       const guardedInitialSigner = createPolicyGuardedSigner(
         createSlipSignerFromKey(parsed.claimKey),
         this.policy,
         { slipAsset: initialOnChain.asset },
       );
 
-      const kept = await keepSlip({
-        publicClient: this.publicClient,
-        slipId: parsed.id,
-        vault: parsed.vault,
-        claimSigner: guardedInitialSigner,
-        userMainWallet: this.operatorAddress,
-        mode: 'agent',
-        isBootKeep: true,
-        mutex: this.mutex,
-        ...this.transportOverrides,
-        onBeforeBroadcast: ({ newClaimPrivateKey, newClaimSigner }) => {
-          this.activeSlipId = parsed.id;
-          this.activeVault = parsed.vault;
-          this.activeAsset = initialOnChain.asset;
-          this.activeClaimPrivateKey = newClaimPrivateKey;
-          this.activeClaimSigner = newClaimSigner;
-          this.bootRotated = true;
-          this.syncStateToDisk();
-        },
-      });
+      let kept;
+      try {
+        kept = await keepSlip({
+          publicClient: this.publicClient,
+          slipId: parsed.id,
+          vault: parsed.vault,
+          claimSigner: guardedInitialSigner,
+          userMainWallet: this.operatorAddress,
+          recoveryMasterKey: this.operatorPrivateKey,
+          mode: 'agent',
+          isBootKeep: true,
+          mutex: this.mutex,
+          ...this.transportOverrides,
+          onBeforeBroadcast: ({ newClaimPrivateKey, newClaimSigner }) => {
+            this.pendingTransition = {
+              kind: 'keep',
+              vault: parsed.vault,
+              parentSlipId: parsed.id,
+              asset: initialOnChain.asset,
+              candidatePrivateKey: newClaimPrivateKey,
+              candidateSigner: newClaimSigner,
+              recordedAt: new Date().toISOString(),
+            };
+            this.syncStateToDisk();
+          },
+        });
+      } catch (err) {
+        await this.reconcilePendingTransition().catch(() => {});
+        throw err;
+      }
 
       this.activeSlipId = kept.slipId.toString();
       this.activeVault = kept.vault;
       this.activeAsset = initialOnChain.asset;
       this.activeClaimPrivateKey = kept.newClaimPrivateKey;
       this.activeClaimSigner = kept.newClaimSigner;
+      this.pendingTransition = undefined;
       this.bootRotated = true;
       this.bootRotationTxHash = kept.txHash;
       this.initialized = true;
@@ -705,6 +981,9 @@ export class PocketSlipVault {
     }
 
     let splitTxHash: Hex | undefined;
+    if (this.pendingTransition) {
+      await this.reconcilePendingTransition().catch(() => {});
+    }
 
     // If operating from an active PocketSlip without an externally funded walletClient,
     // split the required funding slice from the PocketSlip into operatorAddress first,
@@ -761,37 +1040,63 @@ export class PocketSlipVault {
         },
       );
 
-      const splitRes = await splitAndPay({
-        publicClient: this.publicClient,
-        slipId: this.activeSlipId,
-        vault: this.activeVault,
-        claimSigner: guardedPocketSigner,
-        paymentAmount: fundingNeeded,
-        merchant: this.operatorAddress,
-        mode: 'agent',
-        paymasterSignerKey: this.operatorPrivateKey,
-        mutex: this.mutex,
-        ...this.transportOverrides,
-        onBeforeBroadcast: ({ newChangePrivateKey, newChangeSigner, expectedChangeAmount }) => {
-          if (expectedChangeAmount > 0n && newChangePrivateKey) {
-            this.activeClaimPrivateKey = newChangePrivateKey;
-            this.activeClaimSigner = newChangeSigner;
+      const parentSlipIdBeforeSplit = this.activeSlipId;
+      let splitRes;
+      try {
+        splitRes = await splitAndPay({
+          publicClient: this.publicClient,
+          slipId: parentSlipIdBeforeSplit,
+          vault: this.activeVault,
+          claimSigner: guardedPocketSigner,
+          paymentAmount: fundingNeeded,
+          merchant: this.operatorAddress,
+          recoveryMasterKey: this.operatorPrivateKey,
+          mode: 'agent',
+          paymasterSignerKey: this.operatorPrivateKey,
+          mutex: this.mutex,
+          ...this.transportOverrides,
+          onBeforeBroadcast: ({ newChangePrivateKey, newChangeSigner, expectedChangeAmount }) => {
+            this.pendingTransition = {
+              kind: 'split',
+              vault: this.activeVault,
+              parentSlipId: parentSlipIdBeforeSplit,
+              asset: this.activeAsset,
+              candidatePrivateKey: newChangePrivateKey ?? this.operatorPrivateKey,
+              candidateSigner: newChangeSigner,
+              expectedChangeUnits: expectedChangeAmount.toString(),
+              recordedAt: new Date().toISOString(),
+            };
             this.syncStateToDisk();
-          }
-        },
-      });
+          },
+        });
+      } catch (err) {
+        await this.reconcilePendingTransition(undefined, { preserveIfParentStillActive: false }).catch(() => {});
+        throw err;
+      }
 
       splitTxHash = splitRes.txHash;
       if (splitRes.changeAmount > 0n && splitRes.changeSlipId !== null && splitRes.newChangePrivateKey) {
         this.activeSlipId = splitRes.changeSlipId.toString();
         this.activeClaimPrivateKey = splitRes.newChangePrivateKey;
         this.activeClaimSigner = splitRes.newChangeSigner;
+        this.pendingTransition = undefined;
+        this.syncStateToDisk();
       } else if (splitRes.changeAmount === 0n) {
         this.activeSlipId = null;
         this.activeClaimPrivateKey = undefined;
         this.activeClaimSigner = undefined;
+        this.pendingTransition = undefined;
+        this.syncStateToDisk();
+      } else {
+        // Receipt timed out while changeAmount > 0n: reconcile on-chain, or keep pendingTransition intact!
+        const healed = await this.reconcilePendingTransition(undefined, { preserveIfParentStillActive: true });
+        if (!healed.promoted) {
+          throw new PocketSlipError(
+            'Split broadcast is still awaiting Base confirmation; pendingTransition journal preserved for automatic recovery.',
+            'SPLIT_CONFIRMATION_PENDING',
+          );
+        }
       }
-      this.syncStateToDisk();
     } else {
       // Wallet-funded path: enforce policy spend cap on the guarded operator signer
       this.policy.authorizeAndRecordSpend({
@@ -962,6 +1267,9 @@ export class PocketSlipVault {
   }> {
     await this.ensureBooted();
 
+    if (this.pendingTransition) {
+      await this.reconcilePendingTransition().catch(() => {});
+    }
     if (!this.activeSlipId || !this.activeClaimPrivateKey) {
       throw new PocketSlipError(
         'No active PocketSlip available. Provision CRYPTOSLIP_URL with an active slip first.',
@@ -989,38 +1297,63 @@ export class PocketSlipVault {
       { slipAsset: this.activeAsset },
     );
 
-    const res = await splitAndPay({
-      publicClient: this.publicClient,
-      slipId: this.activeSlipId,
-      vault: this.activeVault,
-      claimSigner: guardedSlipSigner,
-      paymentAmount,
-      merchant,
-      allowFullCashOnDust: Boolean(input.allowFullCashOnDust),
-      mode: 'agent', // V-04: defaults headless agent to Circle TokenPaymasterV08 / direct Base tx
-      paymasterSignerKey: this.operatorPrivateKey,
-      ...(this.walletClient ? { walletClient: this.walletClient } : {}),
-      mutex: this.mutex,
-      ...this.transportOverrides,
-      onBeforeBroadcast: ({ newChangePrivateKey, newChangeSigner, expectedChangeAmount }) => {
-        if (expectedChangeAmount > 0n && newChangePrivateKey) {
-          this.activeClaimPrivateKey = newChangePrivateKey;
-          this.activeClaimSigner = newChangeSigner;
+    const parentSlipIdBeforeSplit = this.activeSlipId;
+    let res;
+    try {
+      res = await splitAndPay({
+        publicClient: this.publicClient,
+        slipId: parentSlipIdBeforeSplit,
+        vault: this.activeVault,
+        claimSigner: guardedSlipSigner,
+        paymentAmount,
+        merchant,
+        allowFullCashOnDust: Boolean(input.allowFullCashOnDust),
+        recoveryMasterKey: this.operatorPrivateKey,
+        mode: 'agent', // V-04: defaults headless agent to Circle TokenPaymasterV08 / direct Base tx
+        paymasterSignerKey: this.operatorPrivateKey,
+        ...(this.walletClient ? { walletClient: this.walletClient } : {}),
+        mutex: this.mutex,
+        ...this.transportOverrides,
+        onBeforeBroadcast: ({ newChangePrivateKey, newChangeSigner, expectedChangeAmount }) => {
+          this.pendingTransition = {
+            kind: 'split',
+            vault: this.activeVault,
+            parentSlipId: parentSlipIdBeforeSplit,
+            asset: this.activeAsset,
+            candidatePrivateKey: newChangePrivateKey ?? this.operatorPrivateKey,
+            candidateSigner: newChangeSigner,
+            expectedChangeUnits: expectedChangeAmount.toString(),
+            recordedAt: new Date().toISOString(),
+          };
           this.syncStateToDisk();
-        }
-      },
-    });
+        },
+      });
+    } catch (err) {
+      await this.reconcilePendingTransition(undefined, { preserveIfParentStillActive: false }).catch(() => {});
+      throw err;
+    }
 
     if (res.changeAmount > 0n && res.changeSlipId !== null && res.newChangePrivateKey) {
       this.activeSlipId = res.changeSlipId.toString();
       this.activeClaimPrivateKey = res.newChangePrivateKey;
       this.activeClaimSigner = res.newChangeSigner;
+      this.pendingTransition = undefined;
+      this.syncStateToDisk();
     } else if (res.changeAmount === 0n) {
       this.activeSlipId = null;
       this.activeClaimPrivateKey = undefined;
       this.activeClaimSigner = undefined;
+      this.pendingTransition = undefined;
+      this.syncStateToDisk();
+    } else {
+      const healed = await this.reconcilePendingTransition(undefined, { preserveIfParentStillActive: true });
+      if (!healed.promoted) {
+        throw new PocketSlipError(
+          'Split broadcast is still awaiting Base confirmation; pendingTransition journal preserved for automatic recovery.',
+          'SPLIT_CONFIRMATION_PENDING',
+        );
+      }
     }
-    this.syncStateToDisk();
 
     const summary = {
       txHash: res.txHash,

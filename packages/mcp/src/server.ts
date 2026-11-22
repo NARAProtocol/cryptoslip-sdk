@@ -85,7 +85,7 @@ export function createCryptoSlipMcpServer(
 
   const server = new McpServer({
     name: '@cryptoslip/mcp',
-    version: '1.0.0',
+    version: '1.0.3',
   });
 
   // 1. cryptoslip_status

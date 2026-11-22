@@ -10,13 +10,14 @@ Instead of handing an LLM standing authority over a master private key, hand it 
 - **`V-02` Out-of-Context `BoundedAgentPolicy` Firewall:** Deterministically enforces `maxPerCallUsdMicro`, `maxSpendsPerMinute`, `maxDailyUsdMicro`, `assertSafeDestination` (blocking burn addresses, token contracts, vaults, routers, and known public test addresses), optional recipient/domain allowlists, `redactSecretsFromToolOutput`, and `100%` Uniswap V4 `NARALiquidityHookV5` (`0x07d8F2Dfd121B10dE3176DeAb6A8C0eaa2646aCC`) swap enforcement.
 - **`V-03` Per-Slip Mutex & `$0.10` Remainder Guard:** Serializes concurrent tool calls via `SlipMutex` and prevents sub-minimum change reverts (`$0.10 USDC`, `100 sats` cbBTC, `0.000001` ETH/NARA).
 - **`V-04` Circle `TokenPaymasterV08` Default:** Headless agent operations default to self-funded `USDC` network fees via Circle `TokenPaymasterV08` (`0x0578cFB241215b77442a541325d6A4E6dFE700Ec`) + `Simple7702Account` (`0xe6Cae83BdE06E4c305530e199D7217f42808555B`).
+- **`V-05` Two-Slot Crash Journal & Stateless `Multicall3` Lineage Recovery:** Candidate keys during `keepSlip` and `splitAndPay` are journaled in a non-destructive `pendingTransition` slot before broadcast, surviving HTTP `502` drops and `SIGKILL` crashes cleanly. Passing `CRYPTOSLIP_OPERATOR_KEY` enables deterministic 1-round `Multicall3` chain recovery even in stateless containers (`CRYPTOSLIP_STATE_PATH=""`).
 
 ## Quick Start
 
-Install or invoke the exact Sigstore-verified version (`1.0.2`):
+Install or invoke the exact Sigstore-verified version (`1.0.3`):
 
 ```bash
-CRYPTOSLIP_URL="<YOUR_SLIP_URL>" npx @cryptoslip/mcp@1.0.2
+CRYPTOSLIP_URL="<YOUR_SLIP_URL>" npx @cryptoslip/mcp@1.0.3
 ```
 
 ### Claude Desktop / Claude Code / Cursor Configuration
@@ -26,7 +27,7 @@ CRYPTOSLIP_URL="<YOUR_SLIP_URL>" npx @cryptoslip/mcp@1.0.2
   "mcpServers": {
     "cryptoslip": {
       "command": "npx",
-      "args": ["@cryptoslip/mcp@1.0.2"],
+      "args": ["@cryptoslip/mcp@1.0.3"],
       "env": {
         "CRYPTOSLIP_URL": "<YOUR_SLIP_URL>",
         "CRYPTOSLIP_MAX_PER_CALL_USD": "0.50",
@@ -55,7 +56,8 @@ CRYPTOSLIP_URL="<YOUR_SLIP_URL>" npx @cryptoslip/mcp@1.0.2
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `CRYPTOSLIP_URL` | *(required for PocketSlip)* | `#startapp=slip_...` pocket-funds URL; rotated on boot via `Keep` (`0%` fee). |
-| `CRYPTOSLIP_STATE_PATH` | `~/.cryptoslip-mcp/pocket-state.json` | `0600` local file storing rotated local signer state across restarts. |
+| `CRYPTOSLIP_OPERATOR_KEY` | *(auto-generated & persisted)* | Optional dedicated `0x...` operator recovery key enabling stateless container `Multicall3` lineage recovery when disk state is wiped. |
+| `CRYPTOSLIP_STATE_PATH` | `~/.cryptoslip-mcp/pocket-state.json` | `0600` local file storing rotated local signer & two-slot journal state across restarts. |
 | `CRYPTOSLIP_RPC_URL` | `https://mainnet.base.org` | Base Mainnet (`8453`) JSON-RPC endpoint. |
 | `CRYPTOSLIP_MAX_PER_CALL_USD` | `"0.50"` | Maximum USD-equivalent value allowed per single spend call. |
 | `CRYPTOSLIP_MAX_DAILY_USD` | `"5.00"` | Maximum rolling 24-hour USD-equivalent spend limit. |

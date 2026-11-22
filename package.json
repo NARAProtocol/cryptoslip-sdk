@@ -1,7 +1,7 @@
 {
   "name": "cryptoslip-sdk-monorepo",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Official TypeScript SDK (@cryptoslip/sdk) and PocketSlip MCP Server (@cryptoslip/mcp) for CryptoSLIP Protocol V3.2 on Base Mainnet (8453)",
   "license": "MIT",
   "homepage": "https://slip.naraprotocol.io",

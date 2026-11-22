@@ -3,7 +3,7 @@
   "name": "io.github.NARAProtocol/cryptoslip",
   "title": "CryptoSLIP PocketSlip MCP",
   "description": "Bounded Base (8453) payment vouchers, Multicall3 batch payouts & HTTP 402 MCP for AI agents.",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "websiteUrl": "https://slip.naraprotocol.io",
   "repository": {
     "url": "https://github.com/NARAProtocol/cryptoslip-sdk",
@@ -15,7 +15,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cryptoslip/mcp",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "transport": {
         "type": "stdio"
       },
@@ -23,6 +23,12 @@
         {
           "name": "CRYPTOSLIP_URL",
           "description": "Bounded CryptoSLIP # fragment URL; PocketSlip rotates claimSigner on boot at 0% fee",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "CRYPTOSLIP_OPERATOR_KEY",
+          "description": "Optional deterministic operator/recovery key allowing stateless containers to rediscover active PocketSlips on Base",
           "isRequired": false,
           "isSecret": true
         },

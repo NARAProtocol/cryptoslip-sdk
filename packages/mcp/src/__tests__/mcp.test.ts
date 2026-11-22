@@ -325,6 +325,7 @@ describe('@cryptoslip/mcp PocketSlipVault & MCP Stdio Server (V-01..V-04)', () =
     const pocket = new PocketSlipVault({
       slipUrl: webUrl,
       stateFilePath: null,
+      operatorPrivateKey: deriveKey('mcp-operator-2'),
       publicClient: mockPublicClient,
       policy: {
         maxPerCallUsdMicro: 450_000n, // $0.45 cap
@@ -807,6 +808,7 @@ describe('@cryptoslip/mcp PocketSlipVault & MCP Stdio Server (V-01..V-04)', () =
     const ethPocket = new PocketSlipVault({
       slipUrl: ethSlipUrl,
       stateFilePath: null,
+      operatorPrivateKey: deriveKey('mcp-3r-eth-op'),
       publicClient: mockPublicClient,
       policy: { maxPerCallUsdMicro: 500_000n, maxDailyUsdMicro: 5_000_000n },
       transportOverrides: { directBroadcast, relayClient: offlineRelayClient },
@@ -830,6 +832,7 @@ describe('@cryptoslip/mcp PocketSlipVault & MCP Stdio Server (V-01..V-04)', () =
     const btcPocket = new PocketSlipVault({
       slipUrl: btcSlipUrl,
       stateFilePath: null,
+      operatorPrivateKey: deriveKey('mcp-3r-btc-op'),
       publicClient: mockPublicClient,
       policy: { maxPerCallUsdMicro: 500_000n, maxDailyUsdMicro: 5_000_000n },
       transportOverrides: { directBroadcast, relayClient: offlineRelayClient },
@@ -864,6 +867,7 @@ describe('@cryptoslip/mcp PocketSlipVault & MCP Stdio Server (V-01..V-04)', () =
     const usdcPocket = new PocketSlipVault({
       slipUrl: usdcSlipUrl,
       stateFilePath: null,
+      operatorPrivateKey: deriveKey('mcp-3r-usdc-op'),
       publicClient: mockPublicClient,
       policy: {
         maxPerCallUsdMicro: 500_000n,
@@ -949,5 +953,233 @@ describe('@cryptoslip/mcp PocketSlipVault & MCP Stdio Server (V-01..V-04)', () =
       stateFilePath: null,
     });
     expect(uncastVault.publicClient).toBe(liveBaseClient);
+  });
+
+  it('V-05 Forensic Journal & Stateless Container Recovery: survives transient broadcast failure, mid-split crash, wiped disk via CRYPTOSLIP_OPERATOR_KEY, and blocks unanchored stateFilePath:null rotation', async () => {
+    const creator = privateKeyToAccount(deriveKey('mcp-journal-creator')).address;
+    const merchant = privateKeyToAccount(deriveKey('mcp-journal-merchant')).address;
+    const initialClaimKey = deriveKey('mcp-journal-initial-slip');
+    const initialClaimAddr = privateKeyToAccount(initialClaimKey).address;
+    const operatorKey = deriveKey('mcp-journal-operator-master');
+
+    const { slips, broadcastedCalls, directBroadcast, offlineRelayClient, mockPublicClient } =
+      createSimulatedBaseEnvironment([
+        {
+          slipId: 401n,
+          asset: USDC_BASE_ADDRESS,
+          amount: 10_000_000n, // $10.00 USDC
+          createdAt: 1_795_000_000,
+          cancelLockedUntil: 0n,
+          creator,
+          claimSigner: initialClaimAddr,
+          refundBeneficiary: creator,
+          refundFeeRequired: false,
+          nonce: 0n,
+          status: 1,
+        },
+      ]);
+
+    const { webUrl } = encodeSlipUrl({
+      id: '401',
+      amount: 10,
+      asset: 'USDC',
+      vault: 'v33',
+      mode: 'open',
+      claimKey: initialClaimKey,
+    });
+
+    // 1. Ephemeral guard: stateFilePath: null WITHOUT operatorPrivateKey MUST refuse Boot Auto-Keep before broadcasting!
+    const ephemeralPocket = new PocketSlipVault({
+      slipUrl: webUrl,
+      stateFilePath: null,
+      publicClient: mockPublicClient,
+      transportOverrides: { directBroadcast, relayClient: offlineRelayClient },
+    });
+    await expect(ephemeralPocket.bootAndRotate()).rejects.toThrow(/KEY_PERSISTENCE_REQUIRED/);
+    expect(broadcastedCalls.length).toBe(0);
+    expect(slips.get('401')?.claimSigner.toLowerCase()).toBe(initialClaimAddr.toLowerCase());
+
+    // 2. Boot with persistent state file + deterministic operatorPrivateKey
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pocket-slip-journal-'));
+    tempDirs.push(tmpDir);
+    const stateFilePath = path.join(tmpDir, 'pocket-state.json');
+
+    let failNextSplitBroadcast = false;
+    const faultInjectableBroadcast = async (call: UserOpCall): Promise<Hex> => {
+      if (failNextSplitBroadcast) {
+        failNextSplitBroadcast = false;
+        throw new Error('502 Bad Gateway: simulated bundler outage before tx broadcast');
+      }
+      return directBroadcast(call);
+    };
+
+    const pocket = new PocketSlipVault({
+      slipUrl: webUrl,
+      stateFilePath,
+      operatorPrivateKey: operatorKey,
+      publicClient: mockPublicClient,
+      policy: { maxPerCallUsdMicro: 5_000_000n, maxDailyUsdMicro: 20_000_000n },
+      transportOverrides: { directBroadcast: faultInjectableBroadcast, relayClient: offlineRelayClient },
+    });
+
+    const boot = await pocket.bootAndRotate();
+    expect(boot?.bootRotated).toBe(true);
+    const rotatedParentSigner = boot!.activeClaimSigner;
+
+    // 3. Simulate transient 502 DURING splitAndPay (after onBeforeBroadcast wrote pendingTransition!):
+    // activeClaimPrivateKey MUST NOT be overwritten, and immediate retry MUST succeed!
+    failNextSplitBroadcast = true;
+    await expect(
+      pocket.payMerchantOrX402({ recipient: merchant, amount: '2.00' }),
+    ).rejects.toThrow(/502 Bad Gateway/);
+
+    const stateAfterFailedSplit = JSON.parse(fs.readFileSync(stateFilePath, 'utf8')) as {
+      activeSlipId: string;
+      activeClaimSigner: string;
+      pendingTransition?: unknown;
+    };
+    expect(stateAfterFailedSplit.activeSlipId).toBe('401');
+    expect(stateAfterFailedSplit.activeClaimSigner.toLowerCase()).toBe(rotatedParentSigner.toLowerCase());
+    expect(stateAfterFailedSplit.pendingTransition).toBeUndefined();
+
+    // Retry succeeds cleanly using the preserved parent key! ($10.00 - $2.00 = $8.00 change on child #500)
+    const retrySpend = await pocket.payMerchantOrX402({ recipient: merchant, amount: '2.00' });
+    expect(retrySpend.newActiveSlipId).toBe('500');
+    expect(retrySpend.remainingChangeUnits).toBe('8000000');
+
+    // 4. Simulate process crash AFTER splitAndPay mines on Base (#500 -> #501), BEFORE receipt returns!
+    let crashReceiptOnce = false;
+    const crashablePublicClient = {
+      ...mockPublicClient,
+      waitForTransactionReceipt: async (args: { hash: Hex }) => {
+        if (crashReceiptOnce) {
+          crashReceiptOnce = false;
+          throw new Error('ECONNRESET: connection dropped right after split mined');
+        }
+        return mockPublicClient.waitForTransactionReceipt(args);
+      },
+    } as unknown as PublicClient;
+
+    // When waitForTransactionReceipt throws, SDK splitAndPay catches receipt error (`changeSlipId === null`),
+    // so simulate hard process kill right inside directBroadcast AFTER mining on Base:
+    const crashAfterMineBroadcast = async (call: UserOpCall): Promise<Hex> => {
+      await directBroadcast(call);
+      throw new Error('SIGKILL_SIMULATED_AFTER_ONCHAIN_MINE');
+    };
+
+    const crashingPocket = new PocketSlipVault({
+      slipUrl: webUrl,
+      stateFilePath,
+      operatorPrivateKey: operatorKey,
+      publicClient: crashablePublicClient,
+      policy: { maxPerCallUsdMicro: 5_000_000n, maxDailyUsdMicro: 20_000_000n },
+      transportOverrides: { directBroadcast: crashAfterMineBroadcast, relayClient: offlineRelayClient },
+    });
+
+    await expect(
+      crashingPocket.payMerchantOrX402({ recipient: merchant, amount: '1.50' }),
+    ).rejects.toThrow(/SIGKILL_SIMULATED_AFTER_ONCHAIN_MINE/);
+
+    // Restart fresh instance: reconcilePendingTransition() discovers mined child #501 ($6.50 USDC) automatically!
+    const healedPocket = new PocketSlipVault({
+      slipUrl: webUrl,
+      stateFilePath,
+      operatorPrivateKey: operatorKey,
+      publicClient: mockPublicClient,
+      policy: { maxPerCallUsdMicro: 5_000_000n, maxDailyUsdMicro: 20_000_000n },
+      transportOverrides: { directBroadcast, relayClient: offlineRelayClient },
+    });
+    const healedStatus = await healedPocket.getStatus();
+    expect(healedStatus.slipId).toBe('501');
+    expect(healedStatus.balanceUnits).toBe('6500000');
+
+    // 5. Simulate COMPLETE Docker container filesystem wipe (`pocket-state.json` deleted!)
+    // Recovery using ONLY `operatorPrivateKey` (`CRYPTOSLIP_OPERATOR_KEY`) rediscovers child #501 from Base!
+    fs.unlinkSync(stateFilePath);
+    expect(fs.existsSync(stateFilePath)).toBe(false);
+
+    const statelessRecovered = new PocketSlipVault({
+      slipUrl: webUrl,
+      stateFilePath,
+      operatorPrivateKey: operatorKey,
+      publicClient: mockPublicClient,
+      policy: { maxPerCallUsdMicro: 5_000_000n, maxDailyUsdMicro: 20_000_000n },
+      transportOverrides: { directBroadcast, relayClient: offlineRelayClient },
+    });
+    const statelessBoot = await statelessRecovered.bootAndRotate();
+    expect(statelessBoot?.slipId).toBe('501');
+    expect(statelessBoot?.balanceUnits).toBe('6500000');
+
+    // 6. [H-01] Receipt timeout while tx is still in mempool (not mined yet):
+    // MUST throw SPLIT_CONFIRMATION_PENDING, preserve activeSlipId === '501', and retain pendingTransition!
+    const mempoolOnlyBroadcast = async (_call: UserOpCall): Promise<Hex> =>
+      keccak256(stringToHex('mempool-pending-split-tx'));
+    const timeoutReceiptClient = {
+      ...mockPublicClient,
+      waitForTransactionReceipt: async () => {
+        throw new Error('WaitForTransactionReceiptTimeoutError');
+      },
+    } as unknown as PublicClient;
+
+    const mempoolTimeoutPocket = new PocketSlipVault({
+      slipUrl: webUrl,
+      stateFilePath,
+      operatorPrivateKey: operatorKey,
+      publicClient: timeoutReceiptClient,
+      policy: { maxPerCallUsdMicro: 10_000_000n, maxDailyUsdMicro: 20_000_000n },
+      transportOverrides: { directBroadcast: mempoolOnlyBroadcast, relayClient: offlineRelayClient },
+    });
+    await expect(
+      mempoolTimeoutPocket.payMerchantOrX402({ recipient: merchant, amount: '1.00' }),
+    ).rejects.toThrow(/ awaiting Base confirmation/);
+
+    const mempoolState = JSON.parse(fs.readFileSync(stateFilePath, 'utf8')) as {
+      activeSlipId: string;
+      pendingTransition?: { kind: string; parentSlipId: string };
+    };
+    expect(mempoolState.activeSlipId).toBe('501');
+    expect(mempoolState.pendingTransition?.kind).toBe('split');
+    expect(mempoolState.pendingTransition?.parentSlipId).toBe('501');
+
+    // Age recordedAt past 90s mempool window so dropped tx clears cleanly, then test [M-01] 0-remainder full-spend crash
+    const agedRaw = JSON.parse(fs.readFileSync(stateFilePath, 'utf8')) as Record<string, unknown>;
+    (agedRaw.pendingTransition as Record<string, unknown>).recordedAt = new Date(Date.now() - 120_000).toISOString();
+    fs.writeFileSync(stateFilePath, JSON.stringify(agedRaw, null, 2));
+
+    // 7. [M-01] Full-balance 0-remainder split mines on Base before crash: restart returns null cleanly with 0 balance
+    const fullSpendPocket = new PocketSlipVault({
+      slipUrl: webUrl,
+      stateFilePath,
+      operatorPrivateKey: operatorKey,
+      publicClient: mockPublicClient,
+      policy: { maxPerCallUsdMicro: 10_000_000n, maxDailyUsdMicro: 20_000_000n },
+      transportOverrides: { directBroadcast: crashAfterMineBroadcast, relayClient: offlineRelayClient },
+    });
+    await expect(
+      fullSpendPocket.payMerchantOrX402({
+        recipient: merchant,
+        amount: '6500000',
+        amountIsAtomic: true,
+      }),
+    ).rejects.toThrow(/SIGKILL_SIMULATED_AFTER_ONCHAIN_MINE/);
+
+    const depletedRestart = new PocketSlipVault({
+      slipUrl: webUrl,
+      stateFilePath,
+      operatorPrivateKey: operatorKey,
+      publicClient: mockPublicClient,
+      policy: { maxPerCallUsdMicro: 10_000_000n, maxDailyUsdMicro: 20_000_000n },
+      transportOverrides: { directBroadcast, relayClient: offlineRelayClient },
+    });
+    const depletedBoot = await depletedRestart.bootAndRotate();
+    expect(depletedBoot).toBeNull();
+    const depletedStatus = await depletedRestart.getStatus();
+    expect(depletedStatus.balanceUnits).toBe('0');
+    const depletedDisk = JSON.parse(fs.readFileSync(stateFilePath, 'utf8')) as {
+      activeSlipId: string | null;
+      pendingTransition?: unknown;
+    };
+    expect(depletedDisk.activeSlipId).toBeNull();
+    expect(depletedDisk.pendingTransition).toBeUndefined();
   });
 });
