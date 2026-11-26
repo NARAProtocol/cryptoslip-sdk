@@ -24,7 +24,7 @@ jobs:
 
       - name: Install @cryptoslip/sdk dependencies
         working-directory: packages/sdk
-        run: npm install --no-audit --no-fund
+        run: npm ci --workspaces=false --no-audit --no-fund
 
       - name: Build & verify @cryptoslip/sdk (TypeScript 6, Oxlint, Vitest)
         working-directory: packages/sdk
@@ -36,7 +36,7 @@ jobs:
 
       - name: Install @cryptoslip/mcp dependencies
         working-directory: packages/mcp
-        run: npm install --no-audit --no-fund
+        run: npm ci --workspaces=false --no-audit --no-fund
 
       - name: Build & verify @cryptoslip/mcp (TypeScript 6, Oxlint, Vitest)
         working-directory: packages/mcp

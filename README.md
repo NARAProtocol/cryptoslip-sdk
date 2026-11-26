@@ -5,6 +5,8 @@
 [![npm @cryptoslip/mcp](https://img.shields.io/npm/v/@cryptoslip/mcp?label=%40cryptoslip%2Fmcp)](https://www.npmjs.com/package/@cryptoslip/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Network: Base 8453](https://img.shields.io/badge/Base_Mainnet-8453-0052FF.svg)](https://basescan.org/address/0x3f80aa68Fb4834d6E119EE1cf932C14419Cf63EB#code)
+[![NARAProtocol/cryptoslip-sdk MCP server](https://glama.ai/mcp/servers/NARAProtocol/cryptoslip-sdk/badges/score.svg)](https://glama.ai/mcp/servers/NARAProtocol/cryptoslip-sdk)
+[![M8ven Trust](https://m8ven.ai/badge/mcp/naraprotocol/cryptoslip-sdk)](https://m8ven.ai/mcp/naraprotocol/cryptoslip-sdk?s=readme)
 
 Official **Zero-DOM TypeScript 6 SDK (`@cryptoslip/sdk`)** and **Bounded Agent MCP Server (`@cryptoslip/mcp`)** for **CryptoSLIP Protocol V3.2** on **Base Mainnet (`8453`)** — live at [https://slip.naraprotocol.io](https://slip.naraprotocol.io), ENS [https://cryptoslip.eth.limo](https://cryptoslip.eth.limo), and Telegram Mini App [@cryptoslip_bot/SLIP](https://t.me/cryptoslip_bot/SLIP).
 
